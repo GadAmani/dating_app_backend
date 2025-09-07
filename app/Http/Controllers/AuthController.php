@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Models\role;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
@@ -15,105 +15,72 @@ class AuthController extends Controller
      */
     public function register(Request $request)
     {
-        $validator = Validator::make($request->all(), [
+        $validator = $request->validate([
             'name'     => 'required|string|max:255',
             'email'    => 'nullable|email|unique:users',
             'phone'    => 'nullable|string|unique:users',
             'password' => 'required|string|min:6',
         ]);
 
-        if ($validator->fails()) {
+         $validator['password'] = Hash::make($validator['password']);
+
+        try {
+            $user = User::create($validator);
+
             return response()->json([
-                'error' => $validator->errors()->first()
-            ], 422);
+                'message' => 'Registration Successful!',
+                'user' => $user,
+            ], 201);
+        } catch (\Exception $exception) {
+            return response()->json([
+                'error' => 'Registration failed',
+                'message' => $exception->getMessage()
+            ], 500);
         }
-
-        // Create user with hashed password
-        $user = User::create([
-            'name'     => $request->name,
-            'email'    => $request->email,
-            'phone'    => $request->phone,
-            'password' => Hash::make($request->password),
-        ]);
-
-        // Generate token
-        $token = JWTAuth::fromUser($user);
-
-        return response()->json([
-            'token' => $token,
-            'user'  => $user
-        ]);
     }
 
     /**
      * Login (Email or Phone + Password)
      */
     public function login(Request $request)
-    {
-        $request->validate([
-            'login'    => 'required|string',   // single field for email or phone
-            'password' => 'required|string',
-        ]);
+{
+    $validated = $request->validate([
+        'login'    => 'required|string',   // can be email or phone
+        'password' => 'required|string',
+    ]);
 
-        $loginInput = $request->input('login');
-        $loginType  = filter_var($loginInput, FILTER_VALIDATE_EMAIL) ? 'email' : 'phone';
+    // Find user by email or phone
+    $user = User::where('email', $validated['login'])
+                ->orWhere('phone', $validated['login'])
+                ->first();
 
-        $credentials = [
-            $loginType => $loginInput,
-            'password' => $request->input('password')
-        ];
-
-        try {
-            if (! $token = JWTAuth::attempt($credentials)) {
-                return response()->json(['error' => 'Invalid email/phone or password'], 401);
-            }
-        } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
-            return response()->json(['error' => 'Could not create token'], 500);
-        }
-
+    if (!$user || !Hash::check($validated['password'], $user->password)) {
         return response()->json([
-            'token' => $token,
-            'user'  => JWTAuth::user()
-        ]);
+            'error' => 'Login failed',
+            'message' => 'Invalid credentials'
+        ], 401);
     }
 
-    /**
-     * Get Authenticated User
-     */
-    public function me()
-    {
-        try {
-            $user = JWTAuth::parseToken()->authenticate();
-            return response()->json($user);
-        } catch (\Tymon\JWTAuth\Exceptions\JWTException $e) {
-            return response()->json(['error' => 'Token invalid or expired'], 401);
-        }
-    }
+    // Sanctum token
+    $token = $user->createToken('auth-token')->plainTextToken;
+
+    return response()->json([
+        'message' => 'Login Successful!',
+        'user'    => $user,
+        'token'   => $token
+    ], 200);
+}
+
 
     /**
      * Logout
      */
-    public function logout(Request $request)
-{
-    try {
-        $token = JWTAuth::getToken();
-
-        if (! $token) {
-            return response()->json(['error' => 'Token not provided'], 400);
-        }
-
-        JWTAuth::invalidate($token);
-
-        return response()->json(['message' => 'Logged out successfully']);
-    } catch (\Tymon\JWTAuth\Exceptions\TokenExpiredException $e) {
-        return response()->json(['error' => 'Token has already expired'], 401);
-    } catch (\Tymon\JWTAuth\Exceptions\TokenInvalidException $e) {
-        return response()->json(['error' => 'Token is invalid'], 401);
-    } catch (\Tymon\JWTAuth\Exceptions\TokenBlacklistedException $e) {
-        return response()->json(['error' => 'Token has been blacklisted'], 401);
-    } catch (\Exception $e) {
-        return response()->json(['error' => 'Could not logout'], 500);
+   public function logout(Request $request)
+    {
+        $request->user()->currentAccessToken()->delete();
+        return response()->json([
+            'message' => 'Log Out Successful.'
+        ]);
     }
-}
 
 }
