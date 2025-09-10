@@ -2,44 +2,35 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use App\Models\Like;
 
 class User extends Authenticatable
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, HasApiTokens;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var list<string>
-     */
+    // ---------------- FILLABLE -----------------
     protected $fillable = [
         'name',
         'email',
         'password',
-        'role_id'
+        'phone',
+        'gender',
+        'description',
+        'profile_image',
+        'age',
     ];
 
-    /**
-     * The attributes that should be hidden for serialization.
-     *
-     * @var list<string>
-     */
+    // ---------------- HIDDEN -----------------
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
-     */
+    // ---------------- CASTS -----------------
     protected function casts(): array
     {
         return [
@@ -48,35 +39,37 @@ class User extends Authenticatable
         ];
     }
 
-  
-    public function isAdmin()
+    // ---------------- MATCHES (optional pivot table) -----------------
+    public function matches()
     {
-        return $this->role->id === 1;
+        return $this->belongsToMany(
+            User::class,
+            'matches',        // pivot table name
+            'user_id',        // this user's id
+            'matched_user_id' // other user's id
+        );
     }
 
-    public function isUser()
+    public function matchedBy()
     {
-        return $this->role->id === 2;
+        return $this->belongsToMany(
+            User::class,
+            'matches',
+            'matched_user_id',
+            'user_id'
+        );
     }
 
-    public function isTeacher()
+    // ---------------- LIKES -----------------
+    // Likes this user has given
+    public function likesGiven()
     {
-        return $this->role->id === 3;
+        return $this->hasMany(Like::class, 'user_id');
     }
 
-    public function isStudent()
+    // Likes this user has received
+    public function likesReceived()
     {
-        return $this->role->id === 4;
-    }
-    public function abilities()
-    {
-        $roleId = $this->role->id ?? null;
-
-        return [
-            'admin' => $this->isAdmin(),
-            'user' => $this->isUser(),
-            'teacher' => $this->isTeacher(),
-            'student' => $this->isStudent(),
-        ];
+        return $this->hasMany(Like::class, 'liked_user_id');
     }
 }
